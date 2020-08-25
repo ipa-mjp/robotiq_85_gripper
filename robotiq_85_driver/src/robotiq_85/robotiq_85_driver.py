@@ -93,7 +93,7 @@ class Robotiq85Driver:
             return cmd
 
     def _update_gripper_cmd(self,cmd):
-    
+        print "gripper_cmd: ", cmd
         if (True == cmd.emergency_release):
             self._gripper.activate_emergency_release(open_gripper=cmd.emergency_release_dir)
             return
@@ -152,7 +152,26 @@ class Robotiq85Driver:
         js.velocity = [(pos-self._prev_js_pos[dev])/dt]
         self._prev_js_pos[dev] = pos
         return js
-        
+
+    def get_current_gripper_stat(self):
+        """
+        Public function to obtain the current gripper status.
+        Returns:  Instance of `robotiq_2f_gripper_msgs/RobotiqGripperStatus` message. See the message declaration for fields description
+        """
+        status = GripperStat()
+        status.header.stamp = rospy.get_rostime()
+        #status.header.seq = self._seq
+        status.is_ready = self._gripper.is_ready()
+        status.is_reset = self._gripper.is_reset()
+        status.is_moving = self._gripper.is_moving()
+        status.obj_detected = self._gripper.object_detected()
+        status.fault_status = self._gripper.get_fault_status()
+        status.position = self._gripper.get_pos()
+        status.requested_position = self._gripper.get_req_pos()
+        status.current = self._gripper.get_current()
+        return status
+
+
     def _run_driver(self):
         last_time = rospy.get_time()
         r = rospy.Rate(100)
