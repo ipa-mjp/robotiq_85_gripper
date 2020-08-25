@@ -30,6 +30,37 @@ def operate_gripper():
     # Block processing thread until gripper movement is finished, comment if waiting is not necesary.
     robotiq_client.wait_for_result()
 
+
+    goal = ActionRobotiqGripperGoal()
+    goal.emergency_release = False
+    goal.stop = False
+    goal.position = 0.011
+    goal.speed = 0.01
+    goal.force = 5.0
+
+    # Sends the goal to the gripper.
+    robotiq_client.send_goal(goal)
+    # Block processing thread until gripper movement is finished, comment if waiting is not necesary.
+    robotiq_client.wait_for_result()
+
+
+
+
+    goal = ActionRobotiqGripperGoal()
+    goal.emergency_release = False
+    goal.stop = False
+    goal.position = 0.08
+    goal.speed = 0.01
+    goal.force = 5.0
+
+    # Sends the goal to the gripper.
+    robotiq_client.send_goal(goal)
+    # Block processing thread until gripper movement is finished, comment if waiting is not necesary.
+    robotiq_client.wait_for_result()
+
+
+
+
     # Use pre-defined functions for robot gripper manipulation.
     #####################################################################################
     #while not rospy.is_shutdown():

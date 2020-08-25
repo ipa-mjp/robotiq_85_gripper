@@ -40,14 +40,17 @@ from robotiq_85.robotiq_85_driver import Robotiq85Driver
 import actionlib
 from control_msgs.msg import FollowJointTrajectoryAction, FollowJointTrajectoryResult, FollowJointTrajectoryFeedback, FollowJointTrajectoryGoal
 from robotiq_85_msgs.msg import ActionRobotiqGripperFeedback, ActionRobotiqGripperResult, ActionRobotiqGripperAction, ActionRobotiqGripperGoal
+from robotiq_85_msgs.msg import GripperCmd, GripperStat
 
 GOAL_DETECTION_THRESHOLD = 0.05 # Max deviation from target goal to consider as goal "reached"
 
 
 class CommandGripperActionServer(object):
 
-    def __init__(self, namespace, action_name, driver):
+    def __init__(self, namespace, action_name):
         self._action_name = str(namespace) + str(action_name)
+
+        self._grp_stat = GripperStat()
         self._action_server = actionlib.SimpleActionServer(self._action_name,
                                                             ActionRobotiqGripperAction,
                                                             execute_cb=self.execute_cb,
@@ -56,34 +59,34 @@ class CommandGripperActionServer(object):
                                                             FollowJointTrajectoryAction,
                                                             execute_cb=self.execute_joint_trajectory_cb,
                                                             auto_start = False)
-        self._driver = driver       # Get handle to the Gripper Control Server
+        #self._driver = driver       # Get handle to the Gripper Control Server
+        self._pub = rospy.Publisher('/gripper/cmd', GripperCmd, queue_size=10)
+        self._sub = rospy.Subscriber('/gripper/stat', GripperStat, self.gripper_stat_cb)
 
-
-        # Wait until gripper driver is ready to take commands.
-        watchdog = rospy.Timer(rospy.Duration(15.0), self._connection_timeout, oneshot=True)
-        while not rospy.is_shutdown() and not self._driver._gripper.is_ready:
-            rospy.sleep(0.5)
-            rospy.logwarn_throttle(5, self._action_name + ": Waiting for gripper to be ready...")
-
-        watchdog.shutdown()
-        if not rospy.is_shutdown():
-            self._processing_goal = False
-            self._is_stalled = False
-
-            self._action_server.start()
-            self._joint_trajectory_action_server.start()
-            rospy.loginfo("Robotiq server started")
-
-    def _connection_timeout(self, event):
-        rospy.logfatal("Gripper on port %s seems not to respond" % (self._driver._comport))
-        rospy.signal_shutdown("Gripper on port %s seems not to respond" % (self._driver._comport))
+        self._processing_goal = False
+        self._is_stalled = False
+        self._action_server.start()
+        self._joint_trajectory_action_server.start()
+        rospy.loginfo("Robotiq server started")
 
     def execute_cb(self, goal_command):
       rospy.loginfo( (self._action_name + ": New goal received Pos:%.3f Speed: %.3f Force: %.3f Force-Stop: %r") % (goal_command.position, goal_command.speed, goal_command.force, goal_command.stop) )
+
       # Send incoming command to gripper driver
-      self._driver._update_gripper_cmd(goal_command)
+      #self._driver._update_gripper_cmd(goal_command)
+      grp_cmd = GripperCmd()
+      grp_cmd.emergency_release = goal_command.emergency_release
+      grp_cmd.stop = goal_command.stop
+      grp_cmd.position = goal_command.position
+      grp_cmd.speed = goal_command.speed
+      grp_cmd.force = goal_command.force
+      self._pub.publish(grp_cmd)
+
       # Wait until command is received by the gripper
-      rospy.sleep(rospy.Duration(0.1))
+      rospy.sleep(rospy.Duration(0.5))
+      while (self._grp_stat.is_moving is True):
+          pass
+
       # Set Action Server as active === processing goal...
       self._processing_goal = True
 
@@ -97,7 +100,17 @@ class CommandGripperActionServer(object):
       rate = rospy.Rate( rospy.get_param('~rate', 30) )
 
       while not rospy.is_shutdown() and self._processing_goal and not self._is_stalled:             # While moving and not stalled provide feedback and check for result
-          feedback = self._driver.get_current_gripper_stat()
+          #feedback = self._driver.get_current_gripper_stat()
+          feedback.header = self._grp_stat.header
+          feedback.is_ready = self._grp_stat.is_ready
+          feedback.is_reset = self._grp_stat.is_reset
+          feedback.is_moving = self._grp_stat.is_moving
+          feedback.obj_detected = self._grp_stat.obj_detected
+          feedback.fault_status = self._grp_stat.fault_status
+          feedback.position = self._grp_stat.position
+          feedback.requested_position = self._grp_stat.requested_position
+          feedback.current = self._grp_stat.current
+
           self._action_server.publish_feedback( feedback )
           rospy.logdebug("Error = %.5f Requested position = %.3f Current position = %.3f" % (abs(feedback.requested_position - feedback.position), feedback.requested_position, feedback.position))
           # Check for completition of action
@@ -128,6 +141,8 @@ class CommandGripperActionServer(object):
         print("Not yet implimented!!")
 
 
+    def gripper_stat_cb(self, msg):
+        self._grp_stat = msg
 
     def _execution_timeout(self, event):
         rospy.logerr("%s: Achieving goal is taking too long, dropping current goal")
@@ -141,10 +156,10 @@ if __name__ == "__main__":
     rospy.init_node('robotiq_85_action_server')
 
     # Start robotiq_85 gripper driver
-    gripper_driver = Robotiq85Driver()
+    #gripper_driver = Robotiq85Driver()
 
     # Start action server
-    server = CommandGripperActionServer(rospy.get_namespace(), 'command_robotiq_action', gripper_driver)
+    server = CommandGripperActionServer(rospy.get_namespace(), 'command_robotiq_action')
 
     # Send and Request data from gripper and update joint state every `r`[Hz]
     #r = rospy.Rate(rospy.get_param('~rate', 50 if not sim else 20))
